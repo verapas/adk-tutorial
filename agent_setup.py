@@ -102,10 +102,9 @@ greeting_and_bye_bye_agent = Agent(
 weather_agent_team = Agent(
     name="weather_agent_v2",
     model=MODEL_GEMINI_2_0_FLASH,
-    description="Handles weather, delegates greetings/farewells. Adjusts temperature based on user preference act always in a sassy way.",
+    description="Handles weather, delegates greetings/farewells. Adjusts temperature based on user preference",
     instruction=(
         "Use 'get_weather_stateful' to get weather data. It returns structured weather info, including temperature in Celsius or Fahrenheit based on session state. "
-        "Format the info into a sassy sentence. "
         "If the user mentions a temperature unit preference (like 'use Fahrenheit' or 'I prefer Celsius'), "
         "use the 'set_temperature_preference' tool to update the session state accordingly. "
         "If the user says 'Hi' or 'Bye', delegate to 'greeting_and_bye_bye_agent'."
@@ -128,6 +127,13 @@ APP_NAME = "weather_tutorial_app"
 USER_ID = "user_1"
 SESSION_ID = "session_001"
 initial_state = {"user_preference_temperature_unit": "Celsius"}
+
+# Neuer Session-Service für stateful testing
+session_service_stateful = InMemorySessionService()
+
+# Neue IDs für die Test-Session
+USER_ID_STATEFUL = "user_state_demo"
+SESSION_ID_STATEFUL = "session_state_demo_001"
 
 
 # Async Funktion definieren
@@ -179,59 +185,58 @@ async def call_agent_async(query: str, runner, user_id, session_id):
     print(f"<<< Agent Response: {final_response_text}")
 
 
+
+
+
+
+
+
+
+
+# Root-Agent (stateful)
+root_agent_stateful = Agent(
+    name="weather_agent_v4_stateful",
+    model=MODEL_GEMINI_2_0_FLASH,
+    description="Main agent: weather with temp pref, delegates greetings/farewells, saves report to state.",
+    instruction="Use 'get_weather_stateful' for weather. Respect 'user_preference_temperature_unit'. "
+                "Use 'set_temperature_preference' to change it. "
+                "Delegate greetings to 'greeting_and_bye_bye_agent'.",
+    tools=[get_weather_stateful, set_temperature_preference],
+    sub_agents=[greeting_and_bye_bye_agent],
+    output_key="last_weather_report"
+)
+
+# Runner für den stateful Agent
+runner_root_stateful = Runner(
+    agent=root_agent_stateful,
+    app_name=APP_NAME,
+    session_service=session_service_stateful
+)
+
+# Session mit initialem State erstellen
+initial_state_stateful = {"user_preference_temperature_unit": "Celsius"}
+asyncio.run(session_service_stateful.create_session(
+    app_name=APP_NAME,
+    user_id=USER_ID_STATEFUL,
+    session_id=SESSION_ID_STATEFUL,
+    state=initial_state_stateful
+))
+
+
+
+
+
+
+
+
 async def run_conversation():
-    # await call_agent_async(
-    #     "Hello There",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    #
-    # await call_agent_async(
-    #     "Hello, my name is DonQuijote",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    #
-    # await call_agent_async(
-    #     "how is the weather in New York",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    #
-    # await call_agent_async(
-    #     "how is the weather in Bern, switzerland",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    #
-    # await call_agent_async(
-    #     "Bye",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    # await call_agent_async(
-    #     "Hey, I'm Lisa",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    # await call_agent_async(
-    #     "Do you know the temperature in Tokyo?",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
-    # await call_agent_async(
-    #     "hi, im barbara",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
+
+    await call_agent_async(
+        "hi",
+        runner=runner,
+        user_id=USER_ID,
+        session_id=SESSION_ID
+    )
 
     await call_agent_async(
         "how is the weather in london?",
@@ -240,15 +245,69 @@ async def run_conversation():
         session_id=SESSION_ID
     )
 
-    # await call_agent_async(
-    #     "sheesh, i forgot my name, what was it? dont be mean i have dementia",
-    #     runner=runner,
-    #     user_id=USER_ID,
-    #     session_id=SESSION_ID
-    # )
+
+
+
+async def run_stateful_conversation():
+    print("\n--- 🧪 Testing Session State: Temp Unit & output_key ---")
+
+    # 1. Wetter in London (Initialwert: Celsius)
+    print("--- Turn 1: Wetter in London (Celsius erwartet) ---")
+    await call_agent_async(
+        query="What's the weather in London?",
+        runner=runner_root_stateful,
+        user_id=USER_ID_STATEFUL,
+        session_id=SESSION_ID_STATEFUL
+    )
+
+    # 2. State manuell auf Fahrenheit setzen
+    print("\n--- Update: Temperatur-Einheit auf Fahrenheit setzen ---")
+    try:
+        session_obj = session_service_stateful.sessions[APP_NAME][USER_ID_STATEFUL][SESSION_ID_STATEFUL]
+        session_obj.state["user_preference_temperature_unit"] = "Fahrenheit"
+        print(f"✅ Neue Einheit gesetzt: {session_obj.state['user_preference_temperature_unit']}")
+    except Exception as e:
+        print(f"❌ Fehler beim Setzen der Einheit: {e}")
+
+    # 3. Wetter in New York (jetzt Fahrenheit)
+    print("\n--- Turn 2: Wetter in New York (Fahrenheit erwartet) ---")
+    await call_agent_async(
+        query="Tell me the weather in New York.",
+        runner=runner_root_stateful,
+        user_id=USER_ID_STATEFUL,
+        session_id=SESSION_ID_STATEFUL
+    )
+
+    # 4. Begrüßung (Test Delegation + Output-Key-Überschreiben)
+    print("\n--- Turn 3: Begrüßung senden ---")
+    await call_agent_async(
+        query="Hi!",
+        runner=runner_root_stateful,
+        user_id=USER_ID_STATEFUL,
+        session_id=SESSION_ID_STATEFUL
+    )
+
+    # 5. Session-State inspizieren
+    print("\n--- 📦 Session-State anzeigen ---")
+    final_state = await session_service_stateful.get_session(
+        app_name=APP_NAME,
+        user_id=USER_ID_STATEFUL,
+        session_id=SESSION_ID_STATEFUL
+    )
+
+    if final_state:
+        print(f"🔸 Temperaturpräferenz: {final_state.state.get('user_preference_temperature_unit', 'Nicht gesetzt')}")
+        print(f"🔸 Letzter Wetter-Report (output_key): {final_state.state.get('last_weather_report', 'Nicht gesetzt')}")
+        print(f"🔸 Letzte abgefragte Stadt: {final_state.state.get('last_city_checked_stateful', 'Nicht gesetzt')}")
+    else:
+        print("❌ Fehler beim Laden des Session-States.")
+
+
+
+
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_conversation())
+        asyncio.run(run_stateful_conversation())
     except Exception as e:
         print(f"An error occurred: {e}")
