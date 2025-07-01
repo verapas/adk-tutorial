@@ -47,25 +47,19 @@ def block_keyword_guardrail(
     agent_name = callback_context.agent_name
     print(f"--- Callback: block_keyword_guardrail running for agent: {agent_name} ---")
 
-    # Durchsuche alle user messages nach BLOCK
+
+    # Finde die letzte echte User-Message (ignoriere "For context")
     last_user_message_text = ""
     if llm_request.contents:
-        for content in llm_request.contents:
-            if content.role == 'user' and content.parts:
-                if content.parts[0].text:
-                    if "BLOCK" in content.parts[0].text.upper():
-                        last_user_message_text = content.parts[0].text
-                        break
-        
-        # Falls kein BLOCK gefunden, nimm die letzte User-Message für Logging
-        if not last_user_message_text:
-            for content in reversed(llm_request.contents):
-                if content.role == 'user' and content.parts:
-                    if content.parts[0].text:
-                        last_user_message_text = content.parts[0].text
-                        break
+        for content in reversed(llm_request.contents):
+            if content.role == 'user' and content.parts and content.parts[0].text:
+                msg = content.parts[0].text
+                if not msg.startswith("For context"):
+                    last_user_message_text = msg
+                    break
 
     print(f"--- Callback: Inspecting last user message: '{last_user_message_text[:100]}...' ---")
+
 
     keyword_to_block = "BLOCK"
     if keyword_to_block in last_user_message_text.upper():
